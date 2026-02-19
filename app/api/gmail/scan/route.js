@@ -12,6 +12,12 @@ export async function POST(request) {
             return NextResponse.json({ error: '인증이 필요합니다. 다시 로그인해주세요.' }, { status: 401 });
         }
 
+        // Parse request body for user settings
+        let body = {};
+        try { body = await request.json(); } catch (e) { /* no body */ }
+        const userMaxResults = Math.min(Math.max(body.maxResults || 200, 50), 1000);
+        const scanMonths = Math.min(Math.max(body.scanMonths || 6, 1), 24);
+
         await initializeDatabase();
         const db = getDb();
 
@@ -40,25 +46,32 @@ export async function POST(request) {
         const accessToken = session.accessToken;
 
         // Scan Gmail for subscription emails
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        const afterDate = sixMonthsAgo.toISOString().split('T')[0].replace(/-/g, '/');
+        const sinceDate = new Date();
+        sinceDate.setMonth(sinceDate.getMonth() - scanMonths);
+        const afterDate = sinceDate.toISOString().split('T')[0].replace(/-/g, '/');
 
         const messages = await scanForSubscriptionEmails(accessToken, {
-            maxResults: 100,
+            maxResults: userMaxResults,
             afterDate,
         });
 
         if (!messages || messages.length === 0) {
-            return NextResponse.json({ subscriptions: [], message: '이메일에서 구독 정보를 찾지 못했습니다.' });
+            return NextResponse.json({
+                subscriptions: [],
+                emails_found: 0,
+                emails_scanned: 0,
+                message: '이메일에서 구독 정보를 찾지 못했습니다.',
+            });
         }
 
-        // Get email details
+        // Get email details - NO artificial limit, process all found messages
         const emailDetails = [];
-        for (let i = 0; i < Math.min(messages.length, 50); i++) {
+        const emailMap = new Map(); // messageId -> email detail for linking
+        for (let i = 0; i < messages.length; i++) {
             try {
                 const detail = await getEmailDetails(accessToken, messages[i].id);
                 emailDetails.push(detail);
+                emailMap.set(detail.id, detail);
 
                 const existing = await db.execute({
                     sql: 'SELECT id FROM email_scans WHERE gmail_message_id = ? AND user_id = ?',
@@ -78,7 +91,7 @@ export async function POST(request) {
         // Analyze with AI
         const discovered = await analyzeEmailsForSubscriptions(emailDetails);
 
-        // Match with existing subscriptions and catalog
+        // Match with existing subscriptions and catalog, add email links
         const enriched = [];
         for (const sub of discovered) {
             const catalogMatch = await db.execute({
@@ -91,17 +104,29 @@ export async function POST(request) {
                 args: [user.id, `%${sub.service_name?.toLowerCase()}%`, catalogMatch.rows[0]?.id || ''],
             });
 
+            // Build Gmail web link for the source email
+            const sourceEmail = sub.email_id ? emailMap.get(sub.email_id) : null;
+            const gmailLink = sub.email_id
+                ? `https://mail.google.com/mail/u/0/#inbox/${sub.email_id}`
+                : null;
+
             enriched.push({
                 ...sub,
                 catalog: catalogMatch.rows[0] || null,
                 already_tracked: existingSub.rows.length > 0,
                 existing_id: existingSub.rows[0]?.id || null,
+                gmail_link: gmailLink,
+                source_subject: sourceEmail?.subject || null,
+                source_date: sourceEmail?.date || null,
+                source_from: sourceEmail?.from || null,
             });
         }
 
         return NextResponse.json({
             subscriptions: enriched,
+            emails_found: messages.length,
             emails_scanned: emailDetails.length,
+            scan_months: scanMonths,
             message: `${emailDetails.length}개의 이메일을 분석하여 ${enriched.length}개의 구독을 발견했습니다.`,
         });
     } catch (error) {

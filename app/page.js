@@ -709,12 +709,18 @@ function ScanPage({ onRefresh, showToast }) {
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [maxResults, setMaxResults] = useState(200);
+  const [scanMonths, setScanMonths] = useState(6);
 
   const startGmailScan = async () => {
     setScanning(true);
     setScanResult(null);
     try {
-      const res = await fetch('/api/gmail/scan', { method: 'POST' });
+      const res = await fetch('/api/gmail/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxResults, scanMonths }),
+      });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setScanResult(data);
@@ -774,6 +780,22 @@ function ScanPage({ onRefresh, showToast }) {
     }
   };
 
+  const SCAN_PRESETS = [
+    { label: '50개', value: 50 },
+    { label: '100개', value: 100 },
+    { label: '200개', value: 200 },
+    { label: '500개', value: 500 },
+    { label: '1,000개', value: 1000 },
+  ];
+
+  const MONTH_PRESETS = [
+    { label: '1개월', value: 1 },
+    { label: '3개월', value: 3 },
+    { label: '6개월', value: 6 },
+    { label: '12개월', value: 12 },
+    { label: '24개월', value: 24 },
+  ];
+
   return (
     <div className="scan-container">
       <div className="page-header">
@@ -803,13 +825,61 @@ function ScanPage({ onRefresh, showToast }) {
           </div>
 
           {scanMethod === 'gmail' && (
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-lg)', fontSize: 14 }}>
-                최근 6개월간의 이메일을 분석합니다. Gmail 읽기 권한이 필요합니다.
-              </p>
-              <button className="btn btn-primary btn-lg" onClick={startGmailScan}>
-                🔎 Gmail 스캔 시작
-              </button>
+            <div style={{ maxWidth: 480, margin: '0 auto' }}>
+              {/* Scan Settings */}
+              <div className="card" style={{ padding: 'var(--space-lg)', marginBottom: 'var(--space-lg)' }}>
+                <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: 14, marginBottom: 'var(--space-md)', color: 'var(--text-secondary)' }}>
+                  ⚙️ 스캔 설정
+                </h4>
+
+                <div style={{ marginBottom: 'var(--space-md)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
+                    <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>📬 스캔할 이메일 수</label>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-primary)' }}>{maxResults.toLocaleString()}개</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                    {SCAN_PRESETS.map(p => (
+                      <button
+                        key={p.value}
+                        className={`btn ${maxResults === p.value ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ fontSize: 12, padding: '6px 12px', flex: '1 1 auto', minWidth: 60 }}
+                        onClick={() => setMaxResults(p.value)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
+                    <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>📅 스캔 기간</label>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-primary)' }}>{scanMonths}개월</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                    {MONTH_PRESETS.map(p => (
+                      <button
+                        key={p.value}
+                        className={`btn ${scanMonths === p.value ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ fontSize: 12, padding: '6px 12px', flex: '1 1 auto', minWidth: 60 }}
+                        onClick={() => setScanMonths(p.value)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 'var(--space-md)', lineHeight: 1.5 }}>
+                  💡 이메일 수가 많을수록 정확도가 높아지지만 분석 시간이 길어집니다.
+                </p>
+              </div>
+
+              <div style={{ textAlign: 'center' }}>
+                <button className="btn btn-primary btn-lg" onClick={startGmailScan}>
+                  🔎 Gmail 스캔 시작 ({maxResults.toLocaleString()}개 · {scanMonths}개월)
+                </button>
+              </div>
             </div>
           )}
 
@@ -843,7 +913,10 @@ function ScanPage({ onRefresh, showToast }) {
             {scanMethod === 'gmail' ? '이메일을 분석하고 있습니다...' : '명세서를 분석하고 있습니다...'}
           </h3>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-            AI가 구독 패턴을 식별하고 있습니다. 잠시만 기다려주세요.
+            {scanMethod === 'gmail'
+              ? `최대 ${maxResults.toLocaleString()}개의 이메일을 AI가 분석합니다. 잠시만 기다려주세요.`
+              : 'AI가 구독 패턴을 식별하고 있습니다. 잠시만 기다려주세요.'
+            }
           </p>
         </div>
       )}
@@ -852,26 +925,38 @@ function ScanPage({ onRefresh, showToast }) {
         <>
           <div className="card" style={{ textAlign: 'center', marginBottom: 'var(--space-lg)', padding: 'var(--space-lg)' }}>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 18 }}>{scanResult.message}</h3>
-            {scanResult.emails_scanned && (
-              <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 'var(--space-xs)' }}>
-                {scanResult.emails_scanned}개 이메일 분석 완료
-              </p>
-            )}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--space-lg)', marginTop: 'var(--space-sm)' }}>
+              {scanResult.emails_found > 0 && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  📬 발견: {scanResult.emails_found}개
+                </p>
+              )}
+              {scanResult.emails_scanned > 0 && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  🔍 분석: {scanResult.emails_scanned}개
+                </p>
+              )}
+              {scanResult.scan_months && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  📅 기간: {scanResult.scan_months}개월
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="discovered-list">
             {scanResult.subscriptions?.map((sub, i) => (
-              <div key={i} className="card discovered-item">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flex: 1 }}>
+              <div key={i} className="card discovered-item" style={{ flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', width: '100%' }}>
                   <div
                     className="sub-icon"
                     style={{ background: `var(--cat-${sub.category || 'other'})22` }}
                   >
                     {CATEGORY_ICONS[sub.category || 'other']}
                   </div>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{sub.service_name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
                       <span className={`cat-badge ${getCategoryColor(sub.category)}`}>
                         {CATEGORY_LABELS[sub.category] || '기타'}
                       </span>
@@ -885,22 +970,65 @@ function ScanPage({ onRefresh, showToast }) {
                       )}
                     </div>
                   </div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, marginRight: 'var(--space-md)', textAlign: 'right' }}>
+                    {sub.amount > 0 ? `₩${formatCurrency(sub.amount)}` : '—'}
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 4 }}>
+                      /{CYCLE_LABELS[sub.billing_cycle] || '월'}
+                    </span>
+                  </div>
+                  <div>
+                    {sub.already_tracked ? (
+                      <span style={{ color: 'var(--accent-success)', fontSize: 13, fontWeight: 500 }}>✅ 추가됨</span>
+                    ) : (
+                      <button className="btn btn-primary" onClick={() => addDiscovered(sub)}>
+                        ➕ 추가
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, marginRight: 'var(--space-md)' }}>
-                  {sub.amount > 0 ? `₩${formatCurrency(sub.amount)}` : '—'}
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 4 }}>
-                    /{CYCLE_LABELS[sub.billing_cycle] || '월'}
-                  </span>
-                </div>
-                <div>
-                  {sub.already_tracked ? (
-                    <span style={{ color: 'var(--accent-success)', fontSize: 13, fontWeight: 500 }}>✅ 추가됨</span>
-                  ) : (
-                    <button className="btn btn-primary" onClick={() => addDiscovered(sub)}>
-                      ➕ 추가
-                    </button>
-                  )}
-                </div>
+
+                {/* Source email info with Gmail link */}
+                {(sub.gmail_link || sub.source_subject) && (
+                  <div style={{
+                    width: '100%',
+                    paddingTop: 'var(--space-sm)',
+                    borderTop: '1px solid var(--glass-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-sm)',
+                    fontSize: 12,
+                    color: 'var(--text-tertiary)',
+                  }}>
+                    <span>📩</span>
+                    {sub.gmail_link ? (
+                      <a
+                        href={sub.gmail_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: 'var(--accent-primary)',
+                          textDecoration: 'none',
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={sub.source_subject || '원본 이메일 보기'}
+                      >
+                        {sub.source_subject || '원본 이메일 보기'}
+                      </a>
+                    ) : (
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sub.source_subject}
+                      </span>
+                    )}
+                    {sub.source_date && (
+                      <span style={{ flexShrink: 0 }}>
+                        {new Date(sub.source_date).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
